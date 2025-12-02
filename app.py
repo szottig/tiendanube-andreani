@@ -65,18 +65,27 @@ def crear_envio():
                 "error": "No se recibieron datos JSON"
             }), 400
         
-        order_id = data.get('order_id', 'unknown')
+        # Asegurar que order_id es string
+        order_id = str(data.get('order_id', 'unknown')).strip()
         logger.info(f"Iniciando creación de envío para orden: {order_id}")
         
         # 2. Validar datos requeridos
         required_fields = ['destinatario', 'direccion', 'localidad', 'codigo_postal', 'telefono']
-        missing_fields = [field for field in required_fields if not data.get(field)]
+        
+        # Verificar que los campos existen y no están vacíos
+        missing_fields = []
+        for field in required_fields:
+            value = data.get(field, '').strip() if data.get(field) else ''
+            if not value or value.lower() in ['no informado', 'null', 'none', '']:
+                missing_fields.append(field)
         
         if missing_fields:
             return jsonify({
                 "success": False,
-                "error": f"Campos requeridos faltantes: {missing_fields}",
-                "order_id": order_id
+                "error": f"Campos requeridos faltantes o inválidos: {missing_fields}",
+                "order_id": order_id,
+                "received_data": {k: str(v)[:50] + "..." if len(str(v)) > 50 else str(v) 
+                                 for k, v in data.items()}
             }), 400
         
         # 3. Configurar y usar Selenium
@@ -88,12 +97,21 @@ def crear_envio():
             # SIMULACIÓN TEMPORAL - REMPLAZAR CON CÓDIGO REAL
             logger.info("Simulando creación de envío...")
             
-            # Por ahora, generamos un tracking simulado
-            # TODO: Implementar login real y creación de envío en Andreani
-            tracking_number = f"AND{int(time.time())}{order_id[-6:].replace('-', '')}"
+            # Generar tracking number seguro
+            # Limpiar order_id para solo números
+            order_id_clean = ''.join(filter(str.isdigit, order_id))
+            order_id_suffix = order_id_clean[-6:] if order_id_clean and len(order_id_clean) >= 6 else "000000"
+            
+            tracking_number = f"AND{int(time.time())}{order_id_suffix}"
             
             # Simular tiempo de procesamiento
-            time.sleep(2)
+            time.sleep(1)
+            
+            # Datos recibidos para logging
+            datos_recibidos = {
+                k: str(v)[:100] + "..." if len(str(v)) > 100 else str(v)
+                for k, v in data.items()
+            }
             
             result = {
                 "success": True,
@@ -101,6 +119,7 @@ def crear_envio():
                 "etiqueta_pdf": f"https://andreani.com/etiqueta/{tracking_number}.pdf",
                 "seguimiento_url": f"https://seguimiento.andreani.com/#/{tracking_number}",
                 "order_id": order_id,
+                "datos_recibidos": datos_recibidos,
                 "message": "Envío simulado creado exitosamente",
                 "nota": "Implementar web scraping real para Andreani",
                 "tiempo_procesamiento": round(time.time() - start_time, 2)
@@ -110,7 +129,7 @@ def crear_envio():
             return jsonify(result)
             
         except Exception as e:
-            logger.error(f"Error durante la creación del envío: {str(e)}")
+            logger.error(f"Error durante la creación del envío: {str(e)}", exc_info=True)
             return jsonify({
                 "success": False,
                 "error": f"Error en el proceso: {str(e)}",
@@ -126,7 +145,7 @@ def crear_envio():
                     pass
                 
     except Exception as e:
-        logger.error(f"Error general en el endpoint: {str(e)}")
+        logger.error(f"Error general en el endpoint: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
             "error": f"Error interno del servidor: {str(e)}"
@@ -136,3 +155,4 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     logger.info(f"Iniciando servidor en puerto {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
+
