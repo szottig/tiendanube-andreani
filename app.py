@@ -1,38 +1,138 @@
 from flask import Flask, request, jsonify
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 import os
 import time
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+def setup_driver():
+    """Configurar Chrome para Render"""
+    chrome_options = ChromeOptions()
+    
+    # Configuración para Render/entornos headless
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    
+    # User agent real
+    chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    
+    try:
+        # Usar webdriver-manager para manejar el driver automáticamente
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        return driver
+    except Exception as e:
+        logger.error(f"Error configurando driver: {e}")
+        raise
+
 @app.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "ok", "service": "andreani-webhook"})
+def health_check():
+    """Endpoint para verificar que el servicio está funcionando"""
+    return jsonify({
+        "status": "healthy",
+        "service": "andreani-webhook",
+        "timestamp": time.time()
+    })
 
 @app.route('/crear_envio', methods=['POST'])
 def crear_envio():
-    """Endpoint que simula la creación de envío"""
+    """Endpoint principal para crear envíos en Andreani"""
+    start_time = time.time()
+    
     try:
+        # 1. Validar datos de entrada
         data = request.json
-        print(f"Recibiendo orden: {data.get('order_id')}")
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No se recibieron datos JSON"
+            }), 400
         
-        # SIMULACIÓN - reemplazar con web scraping real después
-        tracking_number = f"AN{int(time.time())}{data.get('order_id', '000')[-4:]}"
+        order_id = data.get('order_id', 'unknown')
+        logger.info(f"Iniciando creación de envío para orden: {order_id}")
         
-        return jsonify({
-            "success": True,
-            "tracking_number": tracking_number,
-            "etiqueta_pdf": f"https://andreani.com/etiquetas/{tracking_number}.pdf",
-            "order_id": data.get('order_id'),
-            "message": "Envío simulado - listo para implementar web scraping",
-            "nota": "Esta es una simulación. Reemplazar con Selenium/Playwright"
-        })
+        # 2. Validar datos requeridos
+        required_fields = ['destinatario', 'direccion', 'localidad', 'codigo_postal', 'telefono']
+        missing_fields = [field for field in required_fields if not data.get(field)]
         
+        if missing_fields:
+            return jsonify({
+                "success": False,
+                "error": f"Campos requeridos faltantes: {missing_fields}",
+                "order_id": order_id
+            }), 400
+        
+        # 3. Configurar y usar Selenium
+        driver = None
+        try:
+            driver = setup_driver()
+            driver.implicitly_wait(10)
+            
+            # SIMULACIÓN TEMPORAL - REMPLAZAR CON CÓDIGO REAL
+            logger.info("Simulando creación de envío...")
+            
+            # Por ahora, generamos un tracking simulado
+            # TODO: Implementar login real y creación de envío en Andreani
+            tracking_number = f"AND{int(time.time())}{order_id[-6:].replace('-', '')}"
+            
+            # Simular tiempo de procesamiento
+            time.sleep(2)
+            
+            result = {
+                "success": True,
+                "tracking_number": tracking_number,
+                "etiqueta_pdf": f"https://andreani.com/etiqueta/{tracking_number}.pdf",
+                "seguimiento_url": f"https://seguimiento.andreani.com/#/{tracking_number}",
+                "order_id": order_id,
+                "message": "Envío simulado creado exitosamente",
+                "nota": "Implementar web scraping real para Andreani",
+                "tiempo_procesamiento": round(time.time() - start_time, 2)
+            }
+            
+            logger.info(f"Envío simulado creado: {tracking_number}")
+            return jsonify(result)
+            
+        except Exception as e:
+            logger.error(f"Error durante la creación del envío: {str(e)}")
+            return jsonify({
+                "success": False,
+                "error": f"Error en el proceso: {str(e)}",
+                "order_id": order_id,
+                "tiempo_procesamiento": round(time.time() - start_time, 2)
+            }), 500
+            
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
+                
     except Exception as e:
+        logger.error(f"Error general en el endpoint: {str(e)}")
         return jsonify({
             "success": False,
-            "error": str(e)
+            "error": f"Error interno del servidor: {str(e)}"
         }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    logger.info(f"Iniciando servidor en puerto {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
