@@ -31,16 +31,19 @@ def setup_driver():
     chrome_options.add_experimental_option('useAutomationExtension', False)
     
     # User agent real
-    chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    chrome_options.add_argument(
+        'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    )
     
     try:
-        # Usar webdriver-manager para manejar el driver automáticamente
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
         return driver
     except Exception as e:
         logger.error(f"Error configurando driver: {e}")
         raise
+
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -51,68 +54,76 @@ def health_check():
         "timestamp": time.time()
     })
 
+
 @app.route('/crear_envio', methods=['POST'])
 def crear_envio():
-    """Endpoint principal para crear envíos en Andreani"""
+    """Endpoint principal para crear envíos en Andreani (simulado)"""
     start_time = time.time()
     
     try:
-        # 1. Validar datos de entrada
+        # 1. Validar datos JSON recibidos
         data = request.json
         if not data:
             return jsonify({
                 "success": False,
                 "error": "No se recibieron datos JSON"
             }), 400
-        
-        # Asegurar que order_id es string
+
+        # Asegurar que order_id siempre es string
         order_id = str(data.get('order_id', 'unknown')).strip()
         logger.info(f"Iniciando creación de envío para orden: {order_id}")
-        
-        # 2. Validar datos requeridos
+
+        # 2. Validar campos requeridos
         required_fields = ['destinatario', 'direccion', 'localidad', 'codigo_postal', 'telefono']
-        
-        # Verificar que los campos existen y no están vacíos
         missing_fields = []
+
         for field in required_fields:
-            value = data.get(field, '').strip() if data.get(field) else ''
-            if not value or value.lower() in ['no informado', 'null', 'none', '']:
+            raw_value = data.get(field)
+
+            # Caso 1: None
+            if raw_value is None:
                 missing_fields.append(field)
-        
+                continue
+
+            # Convertir siempre a string
+            value = str(raw_value).strip()
+
+            # Caso 2: vacío o inválido
+            if value == "" or value.lower() in ["no informado", "null", "none"]:
+                missing_fields.append(field)
+
         if missing_fields:
             return jsonify({
                 "success": False,
                 "error": f"Campos requeridos faltantes o inválidos: {missing_fields}",
                 "order_id": order_id,
-                "received_data": {k: str(v)[:50] + "..." if len(str(v)) > 50 else str(v) 
-                                 for k, v in data.items()}
+                "received_data": {
+                    k: (str(v)[:50] + "...") if len(str(v)) > 50 else str(v)
+                    for k, v in data.items()
+                }
             }), 400
-        
-        # 3. Configurar y usar Selenium
+
+        # 3. Simulación con Selenium
         driver = None
         try:
             driver = setup_driver()
             driver.implicitly_wait(10)
-            
-            # SIMULACIÓN TEMPORAL - REMPLAZAR CON CÓDIGO REAL
+
             logger.info("Simulando creación de envío...")
-            
-            # Generar tracking number seguro
-            # Limpiar order_id para solo números
+
+            # Limpiar order_id para generar tracking
             order_id_clean = ''.join(filter(str.isdigit, order_id))
             order_id_suffix = order_id_clean[-6:] if order_id_clean and len(order_id_clean) >= 6 else "000000"
-            
+
             tracking_number = f"AND{int(time.time())}{order_id_suffix}"
-            
-            # Simular tiempo de procesamiento
+
             time.sleep(1)
-            
-            # Datos recibidos para logging
+
             datos_recibidos = {
-                k: str(v)[:100] + "..." if len(str(v)) > 100 else str(v)
+                k: (str(v)[:100] + "...") if len(str(v)) > 100 else str(v)
                 for k, v in data.items()
             }
-            
+
             result = {
                 "success": True,
                 "tracking_number": tracking_number,
@@ -124,10 +135,10 @@ def crear_envio():
                 "nota": "Implementar web scraping real para Andreani",
                 "tiempo_procesamiento": round(time.time() - start_time, 2)
             }
-            
+
             logger.info(f"Envío simulado creado: {tracking_number}")
             return jsonify(result)
-            
+
         except Exception as e:
             logger.error(f"Error durante la creación del envío: {str(e)}", exc_info=True)
             return jsonify({
@@ -136,14 +147,14 @@ def crear_envio():
                 "order_id": order_id,
                 "tiempo_procesamiento": round(time.time() - start_time, 2)
             }), 500
-            
+
         finally:
             if driver:
                 try:
                     driver.quit()
                 except:
                     pass
-                
+
     except Exception as e:
         logger.error(f"Error general en el endpoint: {str(e)}", exc_info=True)
         return jsonify({
@@ -151,8 +162,8 @@ def crear_envio():
             "error": f"Error interno del servidor: {str(e)}"
         }), 500
 
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     logger.info(f"Iniciando servidor en puerto {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
-
